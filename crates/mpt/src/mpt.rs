@@ -38,7 +38,7 @@ use thiserror::Error as ThisError;
 use anyhow::{Context, Result};
 use reth_primitives::Address;
 
-use super::EthereumState;
+use super::EthereumStateTries;
 
 pub trait RlpBytes {
     /// Returns the RLP-encoding.
@@ -83,7 +83,9 @@ pub const KECCAK_EMPTY: B256 =
 pub fn keccak(data: impl AsRef<[u8]>) -> [u8; 32] {
     // TODO: Remove this benchmarking code once performance testing is complete.
     // std::hint::black_box(sha2::Sha256::digest(&data));
-    *alloy_primitives::utils::keccak256(data)
+    let ret = *alloy_primitives::utils::keccak256(data);
+    ret
+
 }
 
 /// Represents the root node of a sparse Merkle Patricia Trie.
@@ -964,10 +966,10 @@ pub fn shorten_node_path(node: &MptNode) -> Vec<MptNode> {
 pub fn proofs_to_tries(
     state_root: B256,
     proofs: &HashMap<Address, AccountProof>,
-) -> Result<EthereumState> {
+) -> Result<EthereumStateTries> {
     // if no addresses are provided, return the trie only consisting of the state root
     if proofs.is_empty() {
-        return Ok(EthereumState {
+        return Ok(EthereumStateTries {
             state_trie: node_from_digest(state_root),
             storage_tries: HashMap::new(),
         });
@@ -1023,17 +1025,17 @@ pub fn proofs_to_tries(
     let state_trie = resolve_nodes(&state_root_node, &state_nodes);
     assert_eq!(state_trie.hash(), state_root);
 
-    Ok(EthereumState { state_trie, storage_tries: storage })
+    Ok(EthereumStateTries { state_trie, storage_tries: storage })
 }
 
 pub fn transition_proofs_to_tries(
     state_root: B256,
     parent_proofs: &HashMap<Address, AccountProof>,
     proofs: &HashMap<Address, AccountProof>,
-) -> Result<EthereumState> {
+) -> Result<EthereumStateTries> {
     // if no addresses are provided, return the trie only consisting of the state root
     if parent_proofs.is_empty() {
-        return Ok(EthereumState {
+        return Ok(EthereumStateTries {
             state_trie: node_from_digest(state_root),
             storage_tries: HashMap::new(),
         });
@@ -1098,7 +1100,7 @@ pub fn transition_proofs_to_tries(
     let state_trie = resolve_nodes(&state_root_node, &state_nodes);
     assert_eq!(state_trie.hash(), state_root);
 
-    Ok(EthereumState { state_trie, storage_tries: storage })
+    Ok(EthereumStateTries { state_trie, storage_tries: storage })
 }
 
 /// Adds all the leaf nodes of non-inclusion proofs to the nodes.

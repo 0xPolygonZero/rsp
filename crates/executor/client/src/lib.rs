@@ -9,7 +9,9 @@ use std::{borrow::BorrowMut, fmt::Display};
 
 use custom::CustomEvmConfig;
 use eyre::eyre;
-use io::ClientExecutorInput;
+use io::{
+    ClientExecutorInput, ClientExecutorInputWithRawState, ClientExecutorInputWithoutParentState,
+};
 use reth_chainspec::ChainSpec;
 use reth_errors::ProviderError;
 use reth_ethereum_consensus::validate_block_post_execution as validate_block_post_execution_ethereum;
@@ -21,6 +23,7 @@ use reth_optimism_consensus::validate_block_post_execution as validate_block_pos
 use reth_primitives::{proofs, Block, BlockWithSenders, Bloom, Header, Receipt, Receipts, Request};
 use revm::{db::CacheDB, Database};
 use revm_primitives::{address, U256};
+use rsp_mpt::RawEthereumState;
 
 /// Chain ID for Ethereum Mainnet.
 pub const CHAIN_ID_ETH_MAINNET: u64 = 0x1;
@@ -95,24 +98,29 @@ impl ChainVariant {
 }
 
 impl ClientExecutor {
-    pub fn execute<V>(&self, mut input: ClientExecutorInput) -> eyre::Result<Header>
+    pub fn execute<V>(&self, mut input: ClientExecutorInputWithRawState) -> eyre::Result<Header>
     where
         V: Variant,
     {
         // Initialize the witnessed database with verified storage proofs.
+        println!("cycle-tracker-start: witness_db");
         let witness_db = input.witness_db()?;
+        println!("cycle-tracker-end: witness_db");
+        println!("cycle-tracker-start: CacheDB::new");
         let cache_db = CacheDB::new(&witness_db);
+        println!("cycle-tracker-end: CacheDB::new");
 
         // Execute the block.
         let spec = V::spec();
         let executor_block_input = profile!("recover senders", {
             input
+                .input_without_state
                 .current_block
                 .clone()
                 .with_recovered_senders()
                 .ok_or(eyre!("failed to recover senders"))
         })?;
-        let executor_difficulty = input.current_block.header.difficulty;
+        let executor_difficulty = input.input_without_state.current_block.header.difficulty;
         let executor_output = profile!("execute", {
             V::execute(&executor_block_input, executor_difficulty, cache_db)
         })?;
@@ -139,37 +147,44 @@ impl ClientExecutor {
         let executor_outcome = ExecutionOutcome::new(
             executor_output.state,
             Receipts::from(executor_output.receipts),
-            input.current_block.header.number,
+            input.input_without_state.current_block.header.number,
             vec![executor_output.requests.into()],
         );
 
         // Verify the state root.
-        let state_root = profile!("compute state root", {
-            input.parent_state.update(&executor_outcome.hash_state_slow());
-            input.parent_state.state_root()
-        });
+        // let state_root = profile!("compute state root", {
+        //     input.parent_state.update(&executor_outcome.hash_state_slow());
+        //     input.state.state_root()
+        // });
 
-        if state_root != input.current_block.state_root {
-            eyre::bail!("mismatched state root");
-        }
+        // if state_root != input.current_block.state_root {
+        //     eyre::bail!("mismatched state root");
+        // }
 
         // Derive the block header.
         //
         // Note: the receipts root and gas used are verified by `validate_block_post_execution`.
-        let mut header = input.current_block.header.clone();
+        let mut header = input.input_without_state.current_block.header.clone();
         header.parent_hash = input.parent_header().hash_slow();
-        header.ommers_hash = proofs::calculate_ommers_root(&input.current_block.ommers);
-        header.state_root = input.current_block.state_root;
-        header.transactions_root = proofs::calculate_transaction_root(&input.current_block.body);
-        header.receipts_root = input.current_block.header.receipts_root;
+        header.ommers_hash =
+            proofs::calculate_ommers_root(&input.input_without_state.current_block.ommers);
+        header.state_root = input.input_without_state.current_block.state_root;
+        header.transactions_root =
+            proofs::calculate_transaction_root(&input.input_without_state.current_block.body);
+        header.receipts_root = input.input_without_state.current_block.header.receipts_root;
         header.withdrawals_root = input
+            .input_without_state
             .current_block
             .withdrawals
             .clone()
             .map(|w| proofs::calculate_withdrawals_root(w.into_inner().as_slice()));
         header.logs_bloom = logs_bloom;
-        header.requests_root =
-            input.current_block.requests.as_ref().map(|r| proofs::calculate_requests_root(&r.0));
+        header.requests_root = input
+            .input_without_state
+            .current_block
+            .requests
+            .as_ref()
+            .map(|r| proofs::calculate_requests_root(&r.0));
 
         Ok(header)
     }

@@ -1,20 +1,31 @@
 use eyre::Result;
 use reth_trie::{AccountProof, HashedPostState, TrieAccount};
 use revm::primitives::{Address, HashMap, B256};
+use revm_primitives::U256;
 use serde::{Deserialize, Serialize};
 
 /// Module containing MPT code adapted from `zeth`.
 mod mpt;
-use mpt::{proofs_to_tries, transition_proofs_to_tries, MptNode};
+use mpt::{proofs_to_tries, transition_proofs_to_tries, Error, MptNode};
+
+pub trait EthereumState {
+    fn state_root(&self) -> B256;
+
+    fn get_rlp<T: alloy_rlp::Decodable>(&self, key: &[u8]) -> Result<Option<T>, Error>;
+
+    fn get_slot(&self, address_key: &[u8], slot_key: &[u8]) -> Result<Option<U256>, Error>;
+}
+
+pub trait StorageTrie {}
 
 /// Ethereum state trie and account storage tries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EthereumState {
+pub struct EthereumStateTries {
     pub state_trie: MptNode,
     pub storage_tries: HashMap<B256, MptNode>,
 }
 
-impl EthereumState {
+impl EthereumStateTries {
     /// Builds Ethereum state tries from relevant proofs before and after a state transition.
     pub fn from_transition_proofs(
         state_root: B256,
@@ -72,8 +83,69 @@ impl EthereumState {
         }
     }
 
+    pub fn to_bytes(self) -> Vec<u8> {
+        match self.state_trie.as_data() {
+            mpt::MptNodeData::Null => vec![0u8],
+            mpt::MptNodeData::Branch(childrens) => {
+                let mut bytes = vec![]
+                for node in childrens {
+                    if let Some(node) = node
+                        bytes.extend((**node).to_bytes());
+                    } else {
+                        bytes.push(0u8);
+                    }
+                }
+                bytes
+            },
+            mpt::MptNodeData::Leaf(vec, vec1) => todo!(),
+            mpt::MptNodeData::Extension(vec, mpt_node) => todo!(),
+            mpt::MptNodeData::Digest(fixed_bytes) => todo!(),
+        }
+    }
+
+}
+
+impl EthereumState for EthereumStateTries {
     /// Computes the state root.
-    pub fn state_root(&self) -> B256 {
-        self.state_trie.hash()
+    fn state_root(&self) -> B256 {
+        println!("cycle-tracker-start: keccak");
+        let hash = self.state_trie.hash();
+        println!("cycle-tracker-end: keccak");
+        hash
+    }
+
+    fn get_rlp<T: alloy_rlp::Decodable>(&self, key: &[u8]) -> Result<Option<T>, Error> {
+        self.state_trie.get_rlp(key)
+    }
+
+    fn get_slot(&self, address_key: &[u8], slot_key: &[u8]) -> Result<Option<U256>, Error> {
+        let storage_trie = self.storage_tries.get(address_key).unwrap(); // TODO: Handle error
+        storage_trie.get_rlp(slot_key)
+    }
+}
+
+#[derive(Debug)]
+pub struct RawEthereumState {
+    pub raw_data: Vec<u8>,
+}
+
+impl RawEthereumState {
+    fn root_from_index(&self, index: usize) -> B256 {
+        let node_type = self.raw_data[index];
+        unimplemented!()
+    }
+}
+
+impl EthereumState for RawEthereumState {
+    fn state_root(&self) -> B256 {
+        self.root_from_index(0)
+    }
+
+    fn get_rlp<T: alloy_rlp::Decodable>(&self, key: &[u8]) -> Result<Option<T>, Error> {
+        todo!()
+    }
+
+    fn get_slot(&self, address_key: &[u8], slot_key: &[u8]) -> Result<Option<U256>, Error> {
+        todo!()
     }
 }

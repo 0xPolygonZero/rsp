@@ -105,7 +105,9 @@ async fn main() -> eyre::Result<()> {
     };
 
     // Generate the proof.
+    println!("el que corre el elf");
     let client = ProverClient::new();
+    println!("b");
 
     // Setup the proving key and verification key.
     let (pk, vk) = client.setup(match variant {
@@ -116,8 +118,12 @@ async fn main() -> eyre::Result<()> {
 
     // Execute the block inside the zkVM.
     let mut stdin = SP1Stdin::new();
-    let buffer = bincode::serialize(&client_input).unwrap();
-    stdin.write_vec(buffer);
+    let (client_input_without_state, state) = client_input.split_parent_state();
+    let buffer_without_state = bincode::serialize(&client_input_without_state).unwrap();
+    let state_buffer = state.clone().to_bytes();
+    let client_input = ClientExecutorInput::from_split_parent_state(client_input_without_state, state);
+    stdin.write_vec(buffer_without_state);
+    stdin.write_vec(state_buffer);
 
     // Only execute the program.
     let (mut public_values, execution_report) =

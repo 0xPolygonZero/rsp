@@ -1,9 +1,10 @@
 use alloy_provider::ReqwestProvider;
 use rsp_client_executor::{
-    io::ClientExecutorInput, ChainVariant, ClientExecutor, EthereumVariant, LineaVariant,
+    io::{ClientExecutorInput, ClientExecutorInputWithRawState}, ChainVariant, ClientExecutor, EthereumVariant, LineaVariant,
     OptimismVariant, Variant,
 };
 use rsp_host_executor::HostExecutor;
+use rsp_mpt::RawEthereumState;
 use tracing_subscriber::{
     filter::EnvFilter, fmt, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt,
 };
@@ -49,11 +50,17 @@ where
     let client_input =
         host_executor.execute(block_number, variant).await.expect("failed to execute host");
 
+    let (input_without_state, state) = client_input.clone().split_parent_state();
+    let client_input_with_raw_state = ClientExecutorInputWithRawState {
+        input_without_state,
+        raw_state: RawEthereumState{raw_data: state.to_bytes()}
+    };
+
     // Setup the client executor.
     let client_executor = ClientExecutor;
 
     // Execute the client.
-    client_executor.execute::<V>(client_input.clone()).expect("failed to execute client");
+    client_executor.execute::<V>(client_input_with_raw_state).expect("failed to execute client");
 
     // Save the client input to a buffer.
     let buffer = bincode::serialize(&client_input).unwrap();

@@ -9,7 +9,7 @@ use revm::db::CacheDB;
 use rsp_client_executor::{
     io::ClientExecutorInput, ChainVariant, EthereumVariant, LineaVariant, OptimismVariant, Variant,
 };
-use rsp_mpt::EthereumState;
+use rsp_mpt::{EthereumState, EthereumStateTries};
 use rsp_primitives::account_proof::eip1186_proof_to_account_proof;
 use rsp_rpc_db::RpcDb;
 
@@ -150,7 +150,7 @@ impl<T: Transport + Clone, P: Provider<T, AnyNetwork> + Clone> HostExecutor<T, P
             after_storage_proofs.push(eip1186_proof_to_account_proof(storage_proof));
         }
 
-        let state = EthereumState::from_transition_proofs(
+        let state = EthereumStateTries::from_transition_proofs(
             previous_block.state_root,
             &before_storage_proofs.iter().map(|item| (item.address, item.clone())).collect(),
             &after_storage_proofs.iter().map(|item| (item.address, item.clone())).collect(),

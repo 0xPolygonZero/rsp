@@ -35,6 +35,8 @@ pub fn process_execution_report(
     let number_cycles = execution_report.total_instruction_count();
     let number_syscalls = execution_report.total_syscall_count();
 
+    println!("full exec report = {:?}", execution_report.cycle_tracker);
+
     let bn_add_cycles = *execution_report.cycle_tracker.get("precompile-bn-add").unwrap_or(&0);
     let bn_mul_cycles = *execution_report.cycle_tracker.get("precompile-bn-mul").unwrap_or(&0);
     let bn_pair_cycles = *execution_report.cycle_tracker.get("precompile-bn-pair").unwrap_or(&0);
